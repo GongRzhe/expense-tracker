@@ -3,7 +3,7 @@
 import { Request, Response } from 'express';
 import pool from '../config/database';
 import { ExpenseCategory, ApiResponse } from '../types';
-
+import activityLogService from '../services/activityLogService';
 export class CategoryController {
     // 获取所有支出分类
     async getAllCategories(req: Request, res: Response) {
@@ -87,6 +87,17 @@ export class CategoryController {
                 data: result.rows[0],
                 message: '支出分类创建成功'
             };
+            await activityLogService.logActivity({
+                userId: req.user.id,
+                type: 'category_create',
+                description: `创建支出分类: ${name}`,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                metadata: {
+                    categoryId: result.rows[0].id,
+                    categoryName: name
+                }
+            });
             
             res.status(201).json(response);
         } catch (error) {
@@ -132,6 +143,18 @@ export class CategoryController {
                 data: result.rows[0],
                 message: '支出分类更新成功'
             };
+            await activityLogService.logActivity({
+                userId: req.user.id,
+                type: 'category_update',
+                description: `更新支出分类 #${id}`,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                metadata: {
+                    categoryId: id,
+                    oldName: category.rows[0].name,
+                    newName: name
+                }
+            });
             
             res.json(response);
         } catch (error) {
@@ -182,7 +205,17 @@ export class CategoryController {
                 data: result.rows[0],
                 message: '支出分类删除成功'
             };
-            
+            await activityLogService.logActivity({
+                userId: req.user.id,
+                type: 'category_delete',
+                description: `删除支出分类 #${id}`,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                metadata: {
+                    categoryId: id,
+                    categoryData: result.rows[0]
+                }
+            });
             res.json(response);
         } catch (error) {
             const response: ApiResponse<null> = {

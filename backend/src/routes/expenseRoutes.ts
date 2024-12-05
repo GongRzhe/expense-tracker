@@ -2,22 +2,23 @@
 
 import { Router } from 'express';
 import expenseController from '../controllers/expenseController';
+import { authenticate, checkRole, checkOwnership } from '../middleware/auth';
 
 const router = Router();
 
-// GET /api/expenses - 获取支出列表（带分页和筛选）
+// 应用认证中间件
+router.use(authenticate);
+
+// 获取支出列表和创建新支出
 router.get('/', expenseController.getExpenses);
-
-// GET /api/expenses/:id - 获取单个支出记录
-router.get('/:id', expenseController.getExpenseById);
-
-// POST /api/expenses - 创建新支出记录
 router.post('/', expenseController.createExpense);
 
-// PUT /api/expenses/:id - 更新支出记录
-router.put('/:id', expenseController.updateExpense);
+// 需要所有权验证的路由
+router.get('/:id', checkOwnership('expense'), expenseController.getExpenseById);
+router.put('/:id', checkOwnership('expense'), expenseController.updateExpense);
+router.delete('/:id', checkOwnership('expense'), expenseController.deleteExpense);
 
-// DELETE /api/expenses/:id - 删除支出记录
-router.delete('/:id', expenseController.deleteExpense);
+// 管理员特权路由
+router.get('/all/admin', checkRole(['admin']), expenseController.getAllExpenses);
 
 export default router;

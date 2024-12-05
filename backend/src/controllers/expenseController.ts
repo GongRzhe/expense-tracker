@@ -3,7 +3,7 @@
 import { Request, Response } from 'express';
 import pool from '../config/database';
 import { Expense, ApiResponse, PaginationQuery, PaginatedResponse } from '../types';
-
+import activityLogService from '../services/activityLogService';
 export class ExpenseController {
     // 获取支出列表（带分页和筛选）
     async getExpenses(req: Request, res: Response) {
@@ -166,6 +166,19 @@ export class ExpenseController {
                 data: result.rows[0],
                 message: '支出记录创建成功'
             };
+            await activityLogService.logActivity({
+                userId: req.user.id,
+                type: 'expense_create',
+                description: `创建支出记录: ${description}`,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                metadata: {
+                    expenseId: result.rows[0].id,
+                    amount,
+                    category_id,
+                    date
+                }
+            });
             res.status(201).json(response);
         } catch (error) {
             const response: ApiResponse<null> = {
@@ -249,6 +262,17 @@ export class ExpenseController {
                 data: result.rows[0],
                 message: '支出记录更新成功'
             };
+            await activityLogService.logActivity({
+                userId: req.user.id,
+                type: 'expense_update',
+                description: `更新支出记录 #${id}`,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                metadata: {
+                    expenseId: id,
+                    updatedFields: Object.keys(updates)
+                }
+            });
             res.json(response);
         } catch (error) {
             const response: ApiResponse<null> = {
@@ -283,6 +307,17 @@ export class ExpenseController {
                 data: result.rows[0],
                 message: '支出记录删除成功'
             };
+            await activityLogService.logActivity({
+                userId: req.user.id,
+                type: 'expense_delete',
+                description: `删除支出记录 #${id}`,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                metadata: {
+                    expenseId: id,
+                    expenseData: result.rows[0]
+                }
+            });
             res.json(response);
         } catch (error) {
             const response: ApiResponse<null> = {

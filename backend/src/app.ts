@@ -3,10 +3,13 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import authRoutes from './routes/authRoutes';
 import categoryRoutes from './routes/categoryRoutes';
 import expenseRoutes from './routes/expenseRoutes';
 import statisticsRoutes from './routes/statisticsRoutes';
 import exportRoutes from './routes/exportRoutes';
+import userRoutes from './routes/userRoutes';
+import activityLogRoutes from './routes/activityLogRoutes';
 
 // 加载环境变量
 dotenv.config();
@@ -19,31 +22,20 @@ app.use(cors());
 app.use(express.json());
 
 // 路由
+app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/statistics', statisticsRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/activities', activityLogRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {
     res.json({ 
         message: 'Expense Tracker API is running',
-        endpoints: {
-            categories: '/api/categories',
-            expenses: '/api/expenses',
-            statistics: {
-                overview: '/api/statistics/overview',
-                category: '/api/statistics/category',
-                monthly: '/api/statistics/monthly',
-                daily: '/api/statistics/daily',
-                highExpenses: '/api/statistics/high-expenses'
-            },
-            export: {
-                csv: '/api/export/csv',
-                json: '/api/export/json',
-                summary: '/api/export/summary'
-            }
-        }
+        version: '1.0.0',
+        docs: '/api/docs'  // 如果添加了API文档
     });
 });
 
