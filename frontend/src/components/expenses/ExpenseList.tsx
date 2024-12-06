@@ -9,6 +9,7 @@ import Button from '../ui/Button';
 import Card from '../ui/Card';
 import ExpenseFilter from './ExpenseFilter';
 import ExpenseForm from './ExpenseForm';
+import apiClient from '../../services/apiClient';
 
 export const ExpenseList: React.FC = () => {
     const [page, setPage] = useState(1);
@@ -20,9 +21,15 @@ export const ExpenseList: React.FC = () => {
     const [isFormOpen, setIsFormOpen] = useState(false);
 
     // 获取支出列表
+    // const { data, isLoading } = useQuery({
+    //     queryKey: ['expenses', filters],
+    //     queryFn: () => expenseService.getExpenses(filters)
+    // });
     const { data, isLoading } = useQuery({
         queryKey: ['expenses', filters],
-        queryFn: () => expenseService.getExpenses(filters)
+        queryFn: async () => {
+            return apiClient.get('/expenses', { params: filters });
+        }
     });
 
     // 处理分页

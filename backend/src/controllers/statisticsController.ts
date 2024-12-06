@@ -8,30 +8,52 @@ export class StatisticsController {
     // 获取支出总览
     async getOverview(req: Request, res: Response) {
         try {
-            const result = await pool.query(`
-                SELECT 
-                    COUNT(*) as total_records,
-                    SUM(amount) as total_amount,
-                    AVG(amount) as average_amount,
-                    MIN(amount) as min_amount,
-                    MAX(amount) as max_amount
-                FROM expenses
-                WHERE date >= CURRENT_DATE - INTERVAL '30 days'
-            `);
+            const userId = req.user.id;
 
-            const response: ApiResponse<any> = {
+            // 使用子查询获取各项统计数据
+            const result = await pool.query(`
+                WITH stats AS (
+                    SELECT 
+                        COALESCE(SUM(amount), 0) as total_amount,
+                        COALESCE(AVG(amount), 0) as average_amount,
+                        COALESCE(MAX(amount), 0) as max_amount,
+                        COALESCE(MIN(CASE WHEN amount > 0 THEN amount END), 0) as min_amount,
+                        COUNT(*) as total_count
+                    FROM expenses
+                    WHERE user_id = $1
+                        AND date >= CURRENT_DATE - INTERVAL '30 days'
+                )
+                SELECT 
+                    total_amount,
+                    ROUND(average_amount::numeric, 2) as average_amount,
+                    max_amount,
+                    min_amount,
+                    total_count,
+                    (
+                        SELECT COALESCE(SUM(amount), 0)
+                        FROM expenses
+                        WHERE user_id = $1
+                            AND date = CURRENT_DATE
+                    ) as today_amount,
+                    (
+                        SELECT COUNT(*)
+                        FROM expenses
+                        WHERE user_id = $1
+                            AND date = CURRENT_DATE
+                    ) as today_count
+                FROM stats
+            `, [userId]);
+
+            res.json({
                 success: true,
                 data: result.rows[0]
-            };
-            
-            res.json(response);
+            });
         } catch (error) {
-            const response: ApiResponse<null> = {
+            console.error('获取支出总览错误:', error);
+            res.status(500).json({
                 success: false,
-                error: '获取支出总览失败',
-                message: error instanceof Error ? error.message : '未知错误'
-            };
-            res.status(500).json(response);
+                error: '获取支出总览失败'
+            });
         }
     }
 
@@ -64,7 +86,7 @@ export class StatisticsController {
                 success: true,
                 data: result.rows
             };
-            
+
             res.json(response);
         } catch (error) {
             const response: ApiResponse<null> = {
@@ -95,7 +117,7 @@ export class StatisticsController {
                 success: true,
                 data: result.rows
             };
-            
+
             res.json(response);
         } catch (error) {
             const response: ApiResponse<null> = {
@@ -110,32 +132,48 @@ export class StatisticsController {
     // 获取每日支出趋势
     async getDailyTrend(req: Request, res: Response) {
         try {
-            const { days = 30 } = req.query;
-            
-            const result = await pool.query(`
-                SELECT 
-                    date,
-                    COUNT(*) as record_count,
-                    SUM(amount) as total_amount
-                FROM expenses
-                WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
-                GROUP BY date
-                ORDER BY date DESC
-            `);
+            const userId = req.user.id;
+            const days = parseInt(req.query.days as string) || 30;
 
-            const response: ApiResponse<any> = {
+            const result = await pool.query(`
+                WITH RECURSIVE dates AS (
+                    SELECT CURRENT_DATE - INTERVAL '${days - 1} days' as date
+                    UNION ALL
+                    SELECT date + 1
+                    FROM dates
+                    WHERE date < CURRENT_DATE
+                ),
+                daily_stats AS (
+                    SELECT 
+                        date::date,
+                        COALESCE(SUM(amount), 0) as total_amount,
+                        COALESCE(AVG(amount), 0) as average_amount,
+                        COUNT(*) as record_count
+                    FROM expenses
+                    WHERE user_id = $1
+                        AND date >= CURRENT_DATE - INTERVAL '${days - 1} days'
+                    GROUP BY date::date
+                )
+                SELECT 
+                    d.date,
+                    COALESCE(s.total_amount, 0) as total_amount,
+                    ROUND(COALESCE(s.average_amount, 0)::numeric, 2) as average_amount,
+                    COALESCE(s.record_count, 0) as record_count
+                FROM dates d
+                LEFT JOIN daily_stats s ON d.date = s.date
+                ORDER BY d.date
+            `, [userId]);
+
+            res.json({
                 success: true,
                 data: result.rows
-            };
-            
-            res.json(response);
+            });
         } catch (error) {
-            const response: ApiResponse<null> = {
+            console.error('获取每日支出趋势错误:', error);
+            res.status(500).json({
                 success: false,
-                error: '获取日支出趋势失败',
-                message: error instanceof Error ? error.message : '未知错误'
-            };
-            res.status(500).json(response);
+                error: '获取每日支出趋势失败'
+            });
         }
     }
 
@@ -143,7 +181,7 @@ export class StatisticsController {
     async getHighExpenses(req: Request, res: Response) {
         try {
             const { limit = 10 } = req.query;
-            
+
             const result = await pool.query(`
                 SELECT 
                     e.*,
@@ -158,7 +196,7 @@ export class StatisticsController {
                 success: true,
                 data: result.rows
             };
-            
+
             res.json(response);
         } catch (error) {
             const response: ApiResponse<null> = {

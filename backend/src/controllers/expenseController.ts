@@ -2,131 +2,123 @@
 
 import { Request, Response } from 'express';
 import pool from '../config/database';
-import { Expense, ApiResponse, PaginationQuery, PaginatedResponse } from '../types';
-import activityLogService from '../services/activityLogService';
-export class ExpenseController {
-    // 获取支出列表（带分页和筛选）
+
+class ExpenseController {
+    // 获取支出列表
     async getExpenses(req: Request, res: Response) {
         try {
-            const {
-                page = 1,
-                limit = 10,
-                startDate,
-                endDate,
-                categoryId
-            } = req.query as unknown as PaginationQuery;
+            const { page = 1, limit = 10, startDate, endDate, categoryId } = req.query;
+            const offset = (Number(page) - 1) * Number(limit);
 
             // 构建查询条件
-            let queryParams: any[] = [];
-            let conditions: string[] = [];
+            const conditions = ['e.user_id = $1']; // 添加表别名 'e.'
+            const params = [req.user.id];
+            let paramCount = 2;
 
             if (startDate) {
-                queryParams.push(startDate);
-                conditions.push(`date >= $${queryParams.length}`);
+                conditions.push(`e.date >= $${paramCount}`);
+                params.push(startDate);
+                paramCount++;
             }
 
             if (endDate) {
-                queryParams.push(endDate);
-                conditions.push(`date <= $${queryParams.length}`);
+                conditions.push(`e.date <= $${paramCount}`);
+                params.push(endDate);
+                paramCount++;
             }
 
             if (categoryId) {
-                queryParams.push(categoryId);
-                conditions.push(`category_id = $${queryParams.length}`);
+                conditions.push(`e.category_id = $${paramCount}`);
+                params.push(categoryId);
+                paramCount++;
             }
 
-            const whereClause = conditions.length > 0 
-                ? `WHERE ${conditions.join(' AND ')}` 
-                : '';
-
-            // 计算总记录数
+            // 计算总数
             const countQuery = `
-                SELECT COUNT(*) 
-                FROM expenses 
-                ${whereClause}
+                SELECT COUNT(*)
+                FROM expenses e
+                WHERE ${conditions.join(' AND ')}
             `;
-            const totalResult = await pool.query(countQuery, queryParams);
-            const total = parseInt(totalResult.rows[0].count);
+            const countResult = await pool.query(countQuery, params);
+            const total = parseInt(countResult.rows[0].count);
 
             // 获取分页数据
-            const offset = (page - 1) * limit;
             const query = `
-                SELECT e.*, c.name as category_name
+                SELECT 
+                    e.*,
+                    c.name as category_name
                 FROM expenses e
                 LEFT JOIN expense_categories c ON e.category_id = c.id
-                ${whereClause}
-                ORDER BY e.date DESC
-                LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
+                WHERE ${conditions.join(' AND ')}
+                ORDER BY e.date DESC, e.created_at DESC
+                LIMIT $${paramCount} OFFSET $${paramCount + 1}
             `;
             
-            queryParams.push(limit, offset);
-            const result = await pool.query(query, queryParams);
+            const result = await pool.query(
+                query,
+                [...params, limit, offset]
+            );
 
-            const response: ApiResponse<PaginatedResponse<Expense>> = {
+            res.json({
                 success: true,
                 data: {
                     items: result.rows,
                     total,
-                    page,
-                    totalPages: Math.ceil(total / limit),
+                    page: Number(page),
+                    totalPages: Math.ceil(total / Number(limit)),
                     hasMore: offset + result.rows.length < total
                 }
-            };
-
-            res.json(response);
+            });
         } catch (error) {
-            const response: ApiResponse<null> = {
+            console.error('获取支出列表错误:', error);
+            res.status(500).json({
                 success: false,
-                error: '获取支出记录失败',
-                message: error instanceof Error ? error.message : '未知错误'
-            };
-            res.status(500).json(response);
+                error: '获取支出列表失败'
+            });
         }
     }
 
     // 获取单个支出记录
     async getExpenseById(req: Request, res: Response) {
-        const { id } = req.params;
-
         try {
-            const query = `
-                SELECT e.*, c.name as category_name
+            const { id } = req.params;
+            const result = await pool.query(
+                `SELECT 
+                    e.*,
+                    c.name as category_name
                 FROM expenses e
                 LEFT JOIN expense_categories c ON e.category_id = c.id
-                WHERE e.id = $1
-            `;
-            const result = await pool.query<Expense>(query, [id]);
+                WHERE e.id = $1 AND e.user_id = $2`,
+                [id, req.user.id]
+            );
 
             if (result.rows.length === 0) {
-                const response: ApiResponse<null> = {
+                return res.status(404).json({
                     success: false,
-                    error: '支出记录不存在'
-                };
-                return res.status(404).json(response);
+                    error: '支出记录不存在或无权访问'
+                });
             }
 
-            const response: ApiResponse<Expense> = {
+            res.json({
                 success: true,
                 data: result.rows[0]
-            };
-            res.json(response);
+            });
         } catch (error) {
-            const response: ApiResponse<null> = {
+            console.error('获取支出详情错误:', error);
+            res.status(500).json({
                 success: false,
-                error: '获取支出记录失败',
-                message: error instanceof Error ? error.message : '未知错误'
-            };
-            res.status(500).json(response);
+                error: '获取支出详情失败'
+            });
         }
     }
 
     // 创建支出记录
     async createExpense(req: Request, res: Response) {
-        const { description, amount, category_id, date } = req.body;
-
         try {
+            const { description, amount, category_id, date } = req.body;
+
             // 输入验证
-            if (!description || description.trim().length === 0) {
+            if (!description || typeof description !== 'string' || description.trim().length === 0) {
                 return res.status(400).json({
                     success: false,
                     error: '描述不能为空'
@@ -140,81 +132,88 @@ export class ExpenseController {
                 });
             }
 
-            // 检查分类是否存在
+            // 如果提供了分类ID，检查分类是否存在且属于当前用户
             if (category_id) {
                 const categoryCheck = await pool.query(
-                    'SELECT id FROM expense_categories WHERE id = $1',
-                    [category_id]
+                    'SELECT id FROM expense_categories WHERE id = $1 AND user_id = $2',
+                    [category_id, req.user.id]
                 );
                 if (categoryCheck.rows.length === 0) {
                     return res.status(400).json({
                         success: false,
-                        error: '选择的分类不存在'
+                        error: '选择的分类不存在或无权访问'
                     });
                 }
             }
 
-            const result = await pool.query<Expense>(
-                `INSERT INTO expenses (description, amount, category_id, date) 
-                 VALUES ($1, $2, $3, $4) 
-                 RETURNING *`,
-                [description, amount, category_id, date || new Date()]
+            const result = await pool.query(
+                `INSERT INTO expenses (
+                    description, 
+                    amount, 
+                    category_id, 
+                    date, 
+                    user_id
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING *`,
+                [description, amount, category_id, date || new Date(), req.user.id]
             );
 
-            const response: ApiResponse<Expense> = {
+            // 获取带分类名称的完整数据
+            const fullResult = await pool.query(
+                `SELECT 
+                    e.*,
+                    c.name as category_name
+                FROM expenses e
+                LEFT JOIN expense_categories c ON e.category_id = c.id
+                WHERE e.id = $1`,
+                [result.rows[0].id]
+            );
+
+            res.status(201).json({
                 success: true,
-                data: result.rows[0],
-                message: '支出记录创建成功'
-            };
-            await activityLogService.logActivity({
-                userId: req.user.id,
-                type: 'expense_create',
-                description: `创建支出记录: ${description}`,
-                ipAddress: req.ip,
-                userAgent: req.headers['user-agent'],
-                metadata: {
-                    expenseId: result.rows[0].id,
-                    amount,
-                    category_id,
-                    date
-                }
+                data: fullResult.rows[0]
             });
-            res.status(201).json(response);
         } catch (error) {
-            const response: ApiResponse<null> = {
+            console.error('创建支出记录错误:', error);
+            res.status(500).json({
                 success: false,
-                error: '创建支出记录失败',
-                message: error instanceof Error ? error.message : '未知错误'
-            };
-            res.status(500).json(response);
+                error: '创建支出记录失败'
+            });
         }
     }
 
     // 更新支出记录
     async updateExpense(req: Request, res: Response) {
-        const { id } = req.params;
-        const { description, amount, category_id, date } = req.body;
-
         try {
-            // 检查记录是否存在
+            const { id } = req.params;
+            const { description, amount, category_id, date } = req.body;
+
+            // 检查记录是否存在且属于当前用户
             const checkResult = await pool.query(
-                'SELECT id FROM expenses WHERE id = $1',
-                [id]
+                'SELECT id FROM expenses WHERE id = $1 AND user_id = $2',
+                [id, req.user.id]
             );
 
             if (checkResult.rows.length === 0) {
                 return res.status(404).json({
                     success: false,
-                    error: '支出记录不存在'
+                    error: '支出记录不存在或无权访问'
                 });
             }
 
             // 构建更新语句
-            const updates: string[] = [];
-            const values: any[] = [];
+            const updates = [];
+            const values = [];
             let paramCount = 1;
 
             if (description !== undefined) {
+                if (typeof description !== 'string' || description.trim().length === 0) {
+                    return res.status(400).json({
+                        success: false,
+                        error: '描述不能为空'
+                    });
+                }
                 updates.push(`description = $${paramCount}`);
                 values.push(description);
                 paramCount++;
@@ -233,6 +232,18 @@ export class ExpenseController {
             }
 
             if (category_id !== undefined) {
+                if (category_id !== null) {
+                    const categoryCheck = await pool.query(
+                        'SELECT id FROM expense_categories WHERE id = $1 AND user_id = $2',
+                        [category_id, req.user.id]
+                    );
+                    if (categoryCheck.rows.length === 0) {
+                        return res.status(400).json({
+                            success: false,
+                            error: '选择的分类不存在或无权访问'
+                        });
+                    }
+                }
                 updates.push(`category_id = $${paramCount}`);
                 values.push(category_id);
                 paramCount++;
@@ -244,88 +255,73 @@ export class ExpenseController {
                 paramCount++;
             }
 
-            // 添加更新时间
-            updates.push(`updated_at = CURRENT_TIMESTAMP`);
+            if (updates.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: '没有提供要更新的字段'
+                });
+            }
 
-            values.push(id);
+            values.push(id, req.user.id);
             const query = `
                 UPDATE expenses 
-                SET ${updates.join(', ')} 
-                WHERE id = $${paramCount} 
+                SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $${paramCount} AND user_id = $${paramCount + 1}
                 RETURNING *
             `;
 
-            const result = await pool.query<Expense>(query, values);
+            const result = await pool.query(query, values);
 
-            const response: ApiResponse<Expense> = {
+            // 获取带分类名称的完整数据
+            const fullResult = await pool.query(
+                `SELECT 
+                    e.*,
+                    c.name as category_name
+                FROM expenses e
+                LEFT JOIN expense_categories c ON e.category_id = c.id
+                WHERE e.id = $1`,
+                [id]
+            );
+
+            res.json({
                 success: true,
-                data: result.rows[0],
-                message: '支出记录更新成功'
-            };
-            await activityLogService.logActivity({
-                userId: req.user.id,
-                type: 'expense_update',
-                description: `更新支出记录 #${id}`,
-                ipAddress: req.ip,
-                userAgent: req.headers['user-agent'],
-                metadata: {
-                    expenseId: id,
-                    updatedFields: Object.keys(updates)
-                }
+                data: fullResult.rows[0]
             });
-            res.json(response);
         } catch (error) {
-            const response: ApiResponse<null> = {
+            console.error('更新支出记录错误:', error);
+            res.status(500).json({
                 success: false,
-                error: '更新支出记录失败',
-                message: error instanceof Error ? error.message : '未知错误'
-            };
-            res.status(500).json(response);
+                error: '更新支出记录失败'
+            });
         }
     }
 
     // 删除支出记录
     async deleteExpense(req: Request, res: Response) {
-        const { id } = req.params;
-
         try {
-            const result = await pool.query<Expense>(
-                'DELETE FROM expenses WHERE id = $1 RETURNING *',
-                [id]
+            const { id } = req.params;
+            const result = await pool.query(
+                'DELETE FROM expenses WHERE id = $1 AND user_id = $2 RETURNING *',
+                [id, req.user.id]
             );
 
             if (result.rows.length === 0) {
-                const response: ApiResponse<null> = {
+                return res.status(404).json({
                     success: false,
-                    error: '支出记录不存在'
-                };
-                return res.status(404).json(response);
+                    error: '支出记录不存在或无权访问'
+                });
             }
 
-            const response: ApiResponse<Expense> = {
+            res.json({
                 success: true,
-                data: result.rows[0],
-                message: '支出记录删除成功'
-            };
-            await activityLogService.logActivity({
-                userId: req.user.id,
-                type: 'expense_delete',
-                description: `删除支出记录 #${id}`,
-                ipAddress: req.ip,
-                userAgent: req.headers['user-agent'],
-                metadata: {
-                    expenseId: id,
-                    expenseData: result.rows[0]
-                }
+                message: '支出记录已删除'
             });
-            res.json(response);
         } catch (error) {
-            const response: ApiResponse<null> = {
+            console.error('删除支出记录错误:', error);
+            res.status(500).json({
                 success: false,
-                error: '删除支出记录失败',
-                message: error instanceof Error ? error.message : '未知错误'
-            };
-            res.status(500).json(response);
+                error: '删除支出记录失败'
+            });
         }
     }
 }

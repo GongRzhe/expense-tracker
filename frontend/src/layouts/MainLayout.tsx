@@ -1,4 +1,3 @@
-// src/layouts/MainLayout.tsx
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -6,8 +5,12 @@ import {
     HomeIcon, 
     ChartBarIcon, 
     TagIcon, 
-    ArrowRightOnRectangleIcon 
+    ArrowRightOnRectangleIcon,
+    ClockIcon
 } from '@heroicons/react/24/outline';
+
+import { UserIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 
 interface NavItem {
     name: string;
@@ -20,7 +23,11 @@ const navigation: NavItem[] = [
     { name: '支出记录', path: '/expenses', icon: ArrowRightOnRectangleIcon },
     { name: '分类管理', path: '/categories', icon: TagIcon },
     { name: '统计分析', path: '/statistics', icon: ChartBarIcon },
+    { name: '活动日志', path: '/activity-logs', icon: ClockIcon },
+    { name: '个人资料', path: '/profile', icon: UserIcon },
+    { name: '设置', path: '/settings', icon: Cog6ToothIcon }
 ];
+
 
 export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const location = useLocation();

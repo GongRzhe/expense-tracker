@@ -1,60 +1,32 @@
 // src/components/activity/ActivityLogList.tsx
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-    ClockIcon,
-    UserIcon,
-    MapPinIcon,
-    DevicePhoneMobileIcon
-} from '@heroicons/react/24/outline';
 import Card from '../ui/Card';
-
-interface ActivityLog {
-    id: number;
-    activity_type: string;
-    description: string;
-    ip_address: string;
-    user_agent: string;
-    metadata: any;
-    created_at: string;
-}
-
-const activityTypeLabels: Record<string, string> = {
-    login: '登录',
-    logout: '退出',
-    profile_update: '更新资料',
-    password_change: '修改密码',
-    expense_create: '创建支出',
-    expense_update: '更新支出',
-    expense_delete: '删除支出',
-    category_create: '创建分类',
-    category_update: '更新分类',
-    category_delete: '删除分类',
-    settings_update: '更新设置',
-    export_data: '导出数据'
-};
-
-const activityTypeColors: Record<string, string> = {
-    login: 'bg-green-100 text-green-800',
-    logout: 'bg-yellow-100 text-yellow-800',
-    profile_update: 'bg-blue-100 text-blue-800',
-    password_change: 'bg-purple-100 text-purple-800',
-    expense_create: 'bg-indigo-100 text-indigo-800',
-    expense_update: 'bg-cyan-100 text-cyan-800',
-    expense_delete: 'bg-red-100 text-red-800',
-    category_create: 'bg-pink-100 text-pink-800',
-    category_update: 'bg-orange-100 text-orange-800',
-    category_delete: 'bg-rose-100 text-rose-800',
-    settings_update: 'bg-teal-100 text-teal-800',
-    export_data: 'bg-lime-100 text-lime-800'
-};
+import ActivityLogFilter from './ActivityLogFilter';
+import Button from '../ui/Button';
 
 export const ActivityLogList: React.FC = () => {
-    const { data: activities, isLoading } = useQuery({
-        queryKey: ['activities'],
+    const [filters, setFilters] = useState({
+        startDate: '',
+        endDate: '',
+        activityType: '',
+        searchText: ''
+    });
+
+    const [page, setPage] = useState(1);
+    const limit = 20;
+
+    // 获取活动日志
+    const { data, isLoading } = useQuery({
+        queryKey: ['activities', filters, page],
         queryFn: async () => {
-            const response = await fetch('/api/activities/my-activities', {
+            const params = new URLSearchParams({
+                ...filters,
+                page: page.toString(),
+                limit: limit.toString()
+            });
+            const response = await fetch(`/api/activities/my-activities?${params}`, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
                 }
@@ -62,14 +34,9 @@ export const ActivityLogList: React.FC = () => {
             if (!response.ok) {
                 throw new Error('Failed to fetch activities');
             }
-            const data = await response.json();
-            return data.data;
+            return response.json();
         }
     });
-
-    if (isLoading) {
-        return <div>加载活动记录中...</div>;
-    }
 
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
@@ -83,84 +50,90 @@ export const ActivityLogList: React.FC = () => {
         }).format(date);
     };
 
+    if (isLoading) {
+        return <div>加载中...</div>;
+    }
+
     return (
-        <Card title="活动日志">
-            <div className="space-y-6">
-                {activities?.activities.map((activity: ActivityLog) => (
-                    <div
-                        key={activity.id}
-                        className="flex items-start space-x-4 p-4 bg-white rounded-lg shadow"
-                    >
-                        <div className="flex-shrink-0">
-                            <div className={`p-2 rounded-full ${activityTypeColors[activity.activity_type] || 'bg-gray-100 text-gray-800'}`}>
-                                <ClockIcon className="h-5 w-5" />
-                            </div>
-                        </div>
-                        
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                                <p className="text-sm font-medium text-gray-900">
-                                    {activityTypeLabels[activity.activity_type] || activity.activity_type}
-                                </p>
+        <div className="space-y-4">
+            <ActivityLogFilter 
+                filters={filters}
+                onFilterChange={setFilters}
+            />
+
+            <Card title={`活动日志 (共 ${data?.data?.total || 0} 条记录)`}>
+                <div className="space-y-4">
+                    {data?.data?.activities.map((activity: any) => (
+                        <div
+                            key={activity.id}
+                            className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow"
+                        >
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <span className="inline-block px-2 py-1 text-sm rounded-full bg-blue-100 text-blue-800">
+                                        {activity.activity_type}
+                                    </span>
+                                    <p className="mt-2 text-gray-700">
+                                        {activity.description}
+                                    </p>
+                                </div>
                                 <span className="text-sm text-gray-500">
                                     {formatDate(activity.created_at)}
                                 </span>
                             </div>
-                            
-                            <p className="mt-1 text-sm text-gray-600">
-                                {activity.description}
-                            </p>
 
-                            <div className="mt-2 flex flex-wrap gap-4 text-xs text-gray-500">
-                                {activity.ip_address && (
-                                    <div className="flex items-center">
-                                        <MapPinIcon className="h-4 w-4 mr-1" />
+                            <div className="mt-2 text-sm text-gray-500">
+                                <div className="flex items-center space-x-4">
+                                    {activity.ip_address && (
                                         <span>IP: {activity.ip_address}</span>
-                                    </div>
-                                )}
-                                
-                                {activity.user_agent && (
-                                    <div className="flex items-center">
-                                        <DevicePhoneMobileIcon className="h-4 w-4 mr-1" />
-                                        <span>{activity.user_agent}</span>
-                                    </div>
-                                )}
+                                    )}
+                                    {activity.user_agent && (
+                                        <span title={activity.user_agent}>
+                                            {activity.user_agent.slice(0, 50)}
+                                            {activity.user_agent.length > 50 ? '...' : ''}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
 
                             {activity.metadata && (
-                                <div className="mt-2 text-xs text-gray-500">
-                                    <pre className="whitespace-pre-wrap">
+                                <details className="mt-2">
+                                    <summary className="text-sm text-primary-600 cursor-pointer">
+                                        详细信息
+                                    </summary>
+                                    <pre className="mt-2 p-2 bg-gray-50 rounded text-xs overflow-auto">
                                         {JSON.stringify(activity.metadata, null, 2)}
                                     </pre>
-                                </div>
+                                </details>
                             )}
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
 
-            {activities?.totalPages > 1 && (
-                <div className="mt-6 flex justify-center">
-                    <nav className="flex space-x-2">
-                        {Array.from({ length: activities.totalPages }, (_, i) => (
-                            <button
-                                key={i}
-                                className={`px-3 py-1 rounded-md ${
-                                    activities.page === i + 1
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                                onClick={() => {
-                                    // TODO: 实现分页功能
-                                }}
+                    {/* 分页 */}
+                    {data?.data?.totalPages > 1 && (
+                        <div className="flex justify-between items-center mt-4">
+                            <Button
+                                variant="secondary"
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1}
                             >
-                                {i + 1}
-                            </button>
-                        ))}
-                    </nav>
+                                上一页
+                            </Button>
+                            <span className="text-sm text-gray-600">
+                                第 {page} 页，共 {data.data.totalPages} 页
+                            </span>
+                            <Button
+                                variant="secondary"
+                                onClick={() => setPage(p => p + 1)}
+                                disabled={page >= data.data.totalPages}
+                            >
+                                下一页
+                            </Button>
+                        </div>
+                    )}
                 </div>
-            )}
-        </Card>
+            </Card>
+        </div>
     );
 };
 

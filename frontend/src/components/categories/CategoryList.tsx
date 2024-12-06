@@ -8,6 +8,7 @@ import { Category } from '../../types';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 import CategoryForm from './CategoryForm';
+import apiClient from '../../services/apiClient';
 
 export const CategoryList: React.FC = () => {
     const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -15,9 +16,15 @@ export const CategoryList: React.FC = () => {
     const queryClient = useQueryClient();
 
     // 获取分类列表
+    // const { data: categories, isLoading } = useQuery({
+    //     queryKey: ['categories'],
+    //     queryFn: () => categoryService.getAllCategories()
+    // });
     const { data: categories, isLoading } = useQuery({
         queryKey: ['categories'],
-        queryFn: () => categoryService.getAllCategories()
+        queryFn: async () => {
+            return apiClient.get('/categories');
+        }
     });
 
     // 删除分类

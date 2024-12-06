@@ -10,6 +10,7 @@ import statisticsRoutes from './routes/statisticsRoutes';
 import exportRoutes from './routes/exportRoutes';
 import userRoutes from './routes/userRoutes';
 import activityLogRoutes from './routes/activityLogRoutes';
+import userSettingsRoutes from './routes/userSettingsRoutes';
 
 // 加载环境变量
 dotenv.config();
@@ -29,6 +30,7 @@ app.use('/api/statistics', statisticsRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/activities', activityLogRoutes);
+app.use('/api/users', userSettingsRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {

@@ -35,7 +35,7 @@ export const generateToken = (
     };
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn });
-    
+
     // 计算过期时间
     const decoded = jwt.decode(token) as jwt.JwtPayload;
     const expires_at = new Date((decoded.exp || 0) * 1000);
@@ -63,27 +63,50 @@ export const checkPasswordStrength = (password: string): {
     errors: string[];
 } => {
     const errors: string[] = [];
-    
+
     if (password.length < 8) {
         errors.push('密码长度至少为8个字符');
     }
-    
-    if (!/[A-Z]/.test(password)) {
+
+    let hasUpperCase = false;
+    let hasLowerCase = false;
+    let hasNumber = false;
+    let hasSpecial = false;
+
+    // 检查每个字符
+    for (const char of password) {
+        if (char >= 'A' && char <= 'Z') hasUpperCase = true;
+        else if (char >= 'a' && char <= 'z') hasLowerCase = true;
+        else if (char >= '0' && char <= '9') hasNumber = true;
+        else hasSpecial = true;
+    }
+
+    if (!hasUpperCase) {
         errors.push('密码必须包含至少一个大写字母');
     }
-    
-    if (!/[a-z]/.test(password)) {
+
+    if (!hasLowerCase) {
         errors.push('密码必须包含至少一个小写字母');
     }
-    
-    if (!/[0-9]/.test(password)) {
+
+    if (!hasNumber) {
         errors.push('密码必须包含至少一个数字');
     }
-    
-    if (!/[!@#$%^&*]/.test(password)) {
+
+    if (!hasSpecial) {
         errors.push('密码必须包含至少一个特殊字符');
     }
-    
+
+    // 增加调试输出
+    console.log('Password check result:', {
+        password,
+        hasUpperCase,
+        hasLowerCase,
+        hasNumber,
+        hasSpecial,
+        errors
+    });
+
     return {
         isStrong: errors.length === 0,
         errors
@@ -95,7 +118,7 @@ export const parseUserAgent = (userAgent: string): string => {
     // 简单的 User-Agent 解析
     const browser = userAgent.match(/(chrome|firefox|safari|edge|ie|opera)[\/\s](\d+)/i);
     const os = userAgent.match(/(windows|mac|linux|android|ios)[\/\s](\d+)/i);
-    
+
     return `${browser?.[1] || 'Unknown'} ${browser?.[2] || ''} on ${os?.[1] || 'Unknown'}`;
 };
 
@@ -145,7 +168,7 @@ export class LoginAttemptTracker {
     public getRemainingAttempts(identifier: string): number {
         const attempt = this.attempts.get(identifier);
         if (!attempt) return this.MAX_ATTEMPTS;
-        
+
         if (Date.now() - attempt.lastAttempt > this.LOCK_DURATION) {
             this.attempts.delete(identifier);
             return this.MAX_ATTEMPTS;
